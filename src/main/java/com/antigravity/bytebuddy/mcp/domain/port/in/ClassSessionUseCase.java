@@ -19,4 +19,6 @@ public interface ClassSessionUseCase {
     List<ClassSummaryResponse> listClasses();
 
     boolean removeClass(String className);
+
+    void clearSession();
 }

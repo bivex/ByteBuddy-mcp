@@ -1,6 +1,7 @@
 package com.antigravity.bytebuddy.mcp.adapter.mcp;
 
 import com.antigravity.bytebuddy.mcp.adapter.mcp.protocol.McpJsonRpcDispatcher;
+import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ClearSessionTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.DisassembleTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ExecuteMethodTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ExecuteSnippetTool;
@@ -76,6 +77,7 @@ public class ByteBuddyMcpServer {
         dispatcher.registerTool(new LoadBytesTool(sessionService, mapper));
         dispatcher.registerTool(new LoadFromJarTool(sessionService, mapper));
         dispatcher.registerTool(new ExecuteSnippetTool(snippetService, mapper));
+        dispatcher.registerTool(new ClearSessionTool(sessionService, mapper));
     }
 
     public void run(InputStream in, OutputStream out) {

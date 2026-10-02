@@ -37,67 +37,70 @@ public class IsolatedDynamicExecutionAdapter implements DynamicExecutionPort {
         String className = bytecodeClass.getName().getValue();
         byte[] bytes = bytecodeClass.getBytecode();
 
-        ByteArrayOutputStream capturedOutput = new ByteArrayOutputStream();
+        com.antigravity.bytebuddy.mcp.infrastructure.util.BoundedByteArrayOutputStream capturedOutput =
+                new com.antigravity.bytebuddy.mcp.infrastructure.util.BoundedByteArrayOutputStream();
         PrintStream originalOut = System.out;
         PrintStream redirectOut = new PrintStream(capturedOutput, true, StandardCharsets.UTF_8);
 
         long start = System.currentTimeMillis();
-        try {
-            // Load class inside isolated ByteArrayClassLoader with all session classes
-            Map<String, byte[]> typeMap = new java.util.HashMap<>();
-            if (repositoryPort != null) {
-                for (BytecodeClass bc : repositoryPort.findAll()) {
-                    typeMap.put(bc.getName().getValue(), bc.getBytecode());
+        synchronized (System.class) {
+            try {
+                // Load class inside isolated ByteArrayClassLoader with all session classes
+                Map<String, byte[]> typeMap = new java.util.HashMap<>();
+                if (repositoryPort != null) {
+                    for (BytecodeClass bc : repositoryPort.findAll()) {
+                        typeMap.put(bc.getName().getValue(), bc.getBytecode());
+                    }
                 }
-            }
-            typeMap.put(className, bytes);
+                typeMap.put(className, bytes);
 
-            ClassLoader isolatedLoader = new ByteArrayClassLoader(
-                    getClass().getClassLoader(),
-                    typeMap,
-                    ByteArrayClassLoader.PersistenceHandler.MANIFEST
-            );
-
-            Class<?> loadedClass = isolatedLoader.loadClass(className);
-
-            Method targetMethod = findMethod(loadedClass, methodName, args);
-            if (targetMethod == null) {
-                return ExecutionResult.failure(
-                        "Method '" + methodName + "' not found on class " + className,
-                        NoSuchMethodException.class.getName(),
-                        0,
-                        ""
+                ClassLoader isolatedLoader = new ByteArrayClassLoader(
+                        getClass().getClassLoader(),
+                        typeMap,
+                        ByteArrayClassLoader.PersistenceHandler.MANIFEST
                 );
+
+                Class<?> loadedClass = isolatedLoader.loadClass(className);
+
+                Method targetMethod = findMethod(loadedClass, methodName, args);
+                if (targetMethod == null) {
+                    return ExecutionResult.failure(
+                            "Method '" + methodName + "' not found on class " + className,
+                            NoSuchMethodException.class.getName(),
+                            0,
+                            ""
+                    );
+                }
+                targetMethod.setAccessible(true);
+
+                // Redirect stdout temporarily
+                System.setOut(redirectOut);
+
+                Object targetInstance = null;
+                if (!Modifier.isStatic(targetMethod.getModifiers())) {
+                    var ctor = loadedClass.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    targetInstance = ctor.newInstance();
+                }
+
+                Object[] invocationArgs = (args != null && args.length > 0) ? args : new Object[0];
+                Object result = targetMethod.invoke(targetInstance, invocationArgs);
+
+                long duration = System.currentTimeMillis() - start;
+                return ExecutionResult.success(result, duration, capturedOutput.toString(StandardCharsets.UTF_8));
+            } catch (Throwable t) {
+                long duration = System.currentTimeMillis() - start;
+                Throwable cause = t.getCause() != null ? t.getCause() : t;
+                log.warn("Dynamic execution failed for '{}.{}'", className, methodName, cause);
+                return ExecutionResult.failure(
+                        cause.getMessage() != null ? cause.getMessage() : cause.toString(),
+                        cause.getClass().getName(),
+                        duration,
+                        capturedOutput.toString(StandardCharsets.UTF_8)
+                );
+            } finally {
+                System.setOut(originalOut);
             }
-            targetMethod.setAccessible(true);
-
-            // Redirect stdout temporarily
-            System.setOut(redirectOut);
-
-            Object targetInstance = null;
-            if (!Modifier.isStatic(targetMethod.getModifiers())) {
-                var ctor = loadedClass.getDeclaredConstructor();
-                ctor.setAccessible(true);
-                targetInstance = ctor.newInstance();
-            }
-
-            Object[] invocationArgs = (args != null && args.length > 0) ? args : new Object[0];
-            Object result = targetMethod.invoke(targetInstance, invocationArgs);
-
-            long duration = System.currentTimeMillis() - start;
-            return ExecutionResult.success(result, duration, capturedOutput.toString(StandardCharsets.UTF_8));
-        } catch (Throwable t) {
-            long duration = System.currentTimeMillis() - start;
-            Throwable cause = t.getCause() != null ? t.getCause() : t;
-            log.warn("Dynamic execution failed for '{}.{}'", className, methodName, cause);
-            return ExecutionResult.failure(
-                    cause.getMessage() != null ? cause.getMessage() : cause.toString(),
-                    cause.getClass().getName(),
-                    duration,
-                    capturedOutput.toString(StandardCharsets.UTF_8)
-            );
-        } finally {
-            System.setOut(originalOut);
         }
     }
 

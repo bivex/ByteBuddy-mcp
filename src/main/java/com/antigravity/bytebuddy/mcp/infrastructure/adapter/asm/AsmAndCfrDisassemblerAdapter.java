@@ -61,6 +61,7 @@ public class AsmAndCfrDisassemblerAdapter implements BytecodeDisassemblerPort {
         Path tempFile = null;
         try {
             tempFile = Files.createTempFile("decomp_", ".class");
+            tempFile.toFile().deleteOnExit();
             Files.write(tempFile, bytecode);
 
             StringBuilder decompiledResult = new StringBuilder();

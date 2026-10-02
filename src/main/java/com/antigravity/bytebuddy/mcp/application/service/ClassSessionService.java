@@ -155,6 +155,12 @@ public class ClassSessionService implements ClassSessionUseCase {
         return repositoryPort.delete(ClassName.of(className));
     }
 
+    @Override
+    public void clearSession() {
+        repositoryPort.clear();
+        log.info("Session classes cleared");
+    }
+
     private ClassSummaryResponse toSummary(BytecodeClass bc) {
         return new ClassSummaryResponse(
                 bc.getName().getValue(),

@@ -71,12 +71,14 @@ public class ExecuteSnippetService implements ExecuteSnippetUseCase {
         long start = System.currentTimeMillis();
         List<String> registeredClasses = new ArrayList<>();
 
-        ByteArrayOutputStream capturedOutput = new ByteArrayOutputStream();
+        com.antigravity.bytebuddy.mcp.infrastructure.util.BoundedByteArrayOutputStream capturedOutput =
+                new com.antigravity.bytebuddy.mcp.infrastructure.util.BoundedByteArrayOutputStream();
         PrintStream originalOut = System.out;
         PrintStream redirectOut = new PrintStream(capturedOutput, true, StandardCharsets.UTF_8);
 
-        try {
-            Map<String, byte[]> compiledClasses = compilerPort.compile(targetClassName, fullSource);
+        synchronized (System.class) {
+            try {
+                Map<String, byte[]> compiledClasses = compilerPort.compile(targetClassName, fullSource);
 
             // Register compiled classes in session repository
             for (Map.Entry<String, byte[]> entry : compiledClasses.entrySet()) {
@@ -161,8 +163,9 @@ public class ExecuteSnippetService implements ExecuteSnippetUseCase {
                     registeredClasses,
                     cause.getMessage() != null ? cause.getMessage() : cause.toString()
             );
-        } finally {
-            System.setOut(originalOut);
+            } finally {
+                System.setOut(originalOut);
+            }
         }
     }
 

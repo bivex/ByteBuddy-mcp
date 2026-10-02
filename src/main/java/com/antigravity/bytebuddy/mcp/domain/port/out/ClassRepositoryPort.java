@@ -18,4 +18,8 @@ public interface ClassRepositoryPort {
     List<BytecodeClass> findAll();
 
     boolean delete(ClassName className);
+
+    void clear();
+
+    int count();
 }
