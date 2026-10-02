@@ -105,43 +105,53 @@ public class AsmAndCfrDisassemblerAdapter implements BytecodeDisassemblerPort {
 
     @Override
     public ClassStructure parseStructure(byte[] bytecode) {
-        ClassReader cr = new ClassReader(bytecode);
-        ClassNode cn = new ClassNode();
-        cr.accept(cn, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-
-        String superName = cn.superName != null ? cn.superName.replace('/', '.') : "java.lang.Object";
-        List<String> interfaces = cn.interfaces != null
-                ? cn.interfaces.stream().map(i -> i.replace('/', '.')).toList()
-                : Collections.emptyList();
-
-        List<FieldDefinition> fields = new ArrayList<>();
-        if (cn.fields != null) {
-            for (FieldNode fn : cn.fields) {
-                String typeName = Type.getType(fn.desc).getClassName();
-                fields.add(FieldDefinition.of(fn.name, typeName, fn.access, fn.value));
-            }
+        if (bytecode == null || bytecode.length < 4) {
+            throw new com.antigravity.bytebuddy.mcp.domain.exception.BytecodeTransformationException("Bytecode is empty or too short");
         }
+        try {
+            ClassReader cr = new ClassReader(bytecode);
+            ClassNode cn = new ClassNode();
+            cr.accept(cn, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 
-        List<MethodDefinition> methods = new ArrayList<>();
-        if (cn.methods != null) {
-            for (MethodNode mn : cn.methods) {
-                Type methodType = Type.getMethodType(mn.desc);
-                String returnType = methodType.getReturnType().getClassName();
-                List<String> paramTypes = Arrays.stream(methodType.getArgumentTypes())
-                        .map(Type::getClassName)
-                        .toList();
-                methods.add(new MethodDefinition(
-                        mn.name,
-                        returnType,
-                        paramTypes,
-                        mn.access,
-                        MethodDefinition.Strategy.CALL_SUPER,
-                        null
-                ));
+            String superName = cn.superName != null ? cn.superName.replace('/', '.') : "java.lang.Object";
+            List<String> interfaces = cn.interfaces != null
+                    ? cn.interfaces.stream().map(i -> i.replace('/', '.')).toList()
+                    : Collections.emptyList();
+
+            List<FieldDefinition> fields = new ArrayList<>();
+            if (cn.fields != null) {
+                for (FieldNode fn : cn.fields) {
+                    String typeName = Type.getType(fn.desc).getClassName();
+                    fields.add(FieldDefinition.of(fn.name, typeName, fn.access, fn.value));
+                }
             }
-        }
 
-        return new ClassStructure(superName, interfaces, fields, methods, cn.access);
+            List<MethodDefinition> methods = new ArrayList<>();
+            if (cn.methods != null) {
+                for (MethodNode mn : cn.methods) {
+                    Type methodType = Type.getMethodType(mn.desc);
+                    String returnType = methodType.getReturnType().getClassName();
+                    List<String> paramTypes = Arrays.stream(methodType.getArgumentTypes())
+                            .map(Type::getClassName)
+                            .toList();
+                    methods.add(new MethodDefinition(
+                            mn.name,
+                            returnType,
+                            paramTypes,
+                            mn.access,
+                            MethodDefinition.Strategy.CALL_SUPER,
+                            null
+                    ));
+                }
+            }
+
+            return new ClassStructure(superName, interfaces, fields, methods, cn.access);
+        } catch (com.antigravity.bytebuddy.mcp.domain.exception.BytecodeTransformationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new com.antigravity.bytebuddy.mcp.domain.exception.BytecodeTransformationException(
+                    "Failed to parse bytecode structure: " + e.getMessage(), e);
+        }
     }
 
     @Override

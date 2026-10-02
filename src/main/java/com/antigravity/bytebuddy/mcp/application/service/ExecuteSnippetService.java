@@ -53,13 +53,21 @@ public class ExecuteSnippetService implements ExecuteSnippetUseCase {
 
         boolean isFullClass = rawSource.contains("class ");
         if (isFullClass) {
-            Matcher m = CLASS_NAME_PATTERN.matcher(rawSource);
-            if (m.find()) {
-                targetClassName = m.group(1);
-            } else if (command.className() != null && !command.className().isBlank()) {
+            String pkgPrefix = "";
+            Matcher pm = Pattern.compile("package\\s+([a-zA-Z0-9_.]+)\\s*;").matcher(rawSource);
+            if (pm.find()) {
+                pkgPrefix = pm.group(1).trim() + ".";
+            }
+
+            if (command.className() != null && !command.className().isBlank()) {
                 targetClassName = command.className().trim();
             } else {
-                targetClassName = "DynamicSnippetClass" + SNIPPET_COUNTER.getAndIncrement();
+                Matcher m = CLASS_NAME_PATTERN.matcher(rawSource);
+                if (m.find()) {
+                    targetClassName = pkgPrefix + m.group(1);
+                } else {
+                    targetClassName = pkgPrefix + "DynamicSnippetClass" + SNIPPET_COUNTER.getAndIncrement();
+                }
             }
             fullSource = rawSource;
         } else {
@@ -80,89 +88,103 @@ public class ExecuteSnippetService implements ExecuteSnippetUseCase {
             try {
                 Map<String, byte[]> compiledClasses = compilerPort.compile(targetClassName, fullSource);
 
-            // Register compiled classes in session repository
-            for (Map.Entry<String, byte[]> entry : compiledClasses.entrySet()) {
-                String cName = entry.getKey();
-                byte[] bytes = entry.getValue();
-                ClassStructure structure = disassemblerPort.parseStructure(bytes);
-                int version = disassemblerPort.extractMajorVersion(bytes);
-                repositoryPort.save(BytecodeClass.of(ClassName.of(cName), bytes, version, structure));
-                registeredClasses.add(cName);
-            }
+                if (!compiledClasses.containsKey(targetClassName)) {
+                    for (String k : compiledClasses.keySet()) {
+                        if (k.equals(targetClassName) || k.endsWith("." + targetClassName)) {
+                            targetClassName = k;
+                            break;
+                        }
+                    }
+                    if (!compiledClasses.containsKey(targetClassName) && compiledClasses.size() == 1) {
+                        targetClassName = compiledClasses.keySet().iterator().next();
+                    }
+                }
 
-            // Prepare isolated classloader linking against all session classes
-            Map<String, byte[]> typeMap = new HashMap<>(compiledClasses);
-            for (BytecodeClass bc : repositoryPort.findAll()) {
-                typeMap.putIfAbsent(bc.getName().getValue(), bc.getBytecode());
-            }
+                // Register compiled classes in session repository
+                for (Map.Entry<String, byte[]> entry : compiledClasses.entrySet()) {
+                    String cName = entry.getKey();
+                    byte[] bytes = entry.getValue();
+                    ClassStructure structure = disassemblerPort.parseStructure(bytes);
+                    int version = disassemblerPort.extractMajorVersion(bytes);
+                    repositoryPort.save(BytecodeClass.of(ClassName.of(cName), bytes, version, structure));
+                    registeredClasses.add(cName);
+                }
 
-            ClassLoader loader = new ByteArrayClassLoader(
-                    getClass().getClassLoader(),
-                    typeMap,
-                    ByteArrayClassLoader.PersistenceHandler.MANIFEST
-            );
+                // Prepare isolated classloader linking against all session classes
+                Map<String, byte[]> typeMap = new HashMap<>(compiledClasses);
+                for (BytecodeClass bc : repositoryPort.findAll()) {
+                    typeMap.putIfAbsent(bc.getName().getValue(), bc.getBytecode());
+                }
 
-            Class<?> clazz = loader.loadClass(targetClassName);
-            Method entryMethod = findEntryMethod(clazz);
+                ClassLoader loader = new ByteArrayClassLoader(
+                        getClass().getClassLoader(),
+                        typeMap,
+                        ByteArrayClassLoader.PersistenceHandler.MANIFEST
+                );
 
-            System.setOut(redirectOut);
+                Class<?> clazz = loader.loadClass(targetClassName);
+                Method entryMethod = findEntryMethod(clazz);
 
-            Object instance = null;
-            if (!Modifier.isStatic(entryMethod.getModifiers())) {
-                var ctor = clazz.getDeclaredConstructor();
-                ctor.setAccessible(true);
-                instance = ctor.newInstance();
-            }
+                System.setOut(redirectOut);
 
-            Object result;
-            if (entryMethod.getParameterCount() == 1 && entryMethod.getParameterTypes()[0].isArray()) {
-                result = entryMethod.invoke(instance, (Object) new String[0]);
-            } else {
-                result = entryMethod.invoke(instance);
-            }
+                Object instance = null;
+                if (!Modifier.isStatic(entryMethod.getModifiers())) {
+                    var ctor = clazz.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    instance = ctor.newInstance();
+                }
 
-            // If the snippet returned a ByteBuddy DynamicType, automatically register it in repository!
-            if (result instanceof DynamicType.Unloaded<?> unloaded) {
-                byte[] bytes = unloaded.getBytes();
-                String dynName = unloaded.getTypeDescription().getName();
-                ClassStructure struct = disassemblerPort.parseStructure(bytes);
-                int ver = disassemblerPort.extractMajorVersion(bytes);
-                repositoryPort.save(BytecodeClass.of(ClassName.of(dynName), bytes, ver, struct));
-                registeredClasses.add(dynName);
-                log.info("Automatically registered ByteBuddy generated class '{}' from snippet return", dynName);
-            } else if (result instanceof DynamicType.Loaded<?> loaded) {
-                byte[] bytes = loaded.getBytes();
-                String dynName = loaded.getLoaded().getName();
-                ClassStructure struct = disassemblerPort.parseStructure(bytes);
-                int ver = disassemblerPort.extractMajorVersion(bytes);
-                repositoryPort.save(BytecodeClass.of(ClassName.of(dynName), bytes, ver, struct));
-                registeredClasses.add(dynName);
-                log.info("Automatically registered ByteBuddy loaded class '{}' from snippet return", dynName);
-            }
+                Object result;
+                if (entryMethod.getParameterCount() == 1 && entryMethod.getParameterTypes()[0].isArray()) {
+                    result = entryMethod.invoke(instance, (Object) new String[0]);
+                } else {
+                    result = entryMethod.invoke(instance);
+                }
 
-            long duration = System.currentTimeMillis() - start;
-            String outStr = capturedOutput.toString(StandardCharsets.UTF_8).trim();
+                // If the snippet returned a ByteBuddy DynamicType, automatically register it in repository!
+                if (result instanceof DynamicType.Unloaded<?> unloaded) {
+                    byte[] bytes = unloaded.getBytes();
+                    String dynName = unloaded.getTypeDescription().getName();
+                    ClassStructure struct = disassemblerPort.parseStructure(bytes);
+                    int ver = disassemblerPort.extractMajorVersion(bytes);
+                    repositoryPort.save(BytecodeClass.of(ClassName.of(dynName), bytes, ver, struct));
+                    registeredClasses.add(dynName);
+                    log.info("Automatically registered ByteBuddy generated class '{}' from snippet return", dynName);
+                } else if (result instanceof DynamicType.Loaded<?> loaded) {
+                    byte[] bytes = loaded.getBytes();
+                    String dynName = loaded.getLoaded().getName();
+                    ClassStructure struct = disassemblerPort.parseStructure(bytes);
+                    int ver = disassemblerPort.extractMajorVersion(bytes);
+                    repositoryPort.save(BytecodeClass.of(ClassName.of(dynName), bytes, ver, struct));
+                    registeredClasses.add(dynName);
+                    log.info("Automatically registered ByteBuddy loaded class '{}' from snippet return", dynName);
+                }
 
-            return new SnippetExecutionResponse(
-                    true,
-                    result != null ? result.toString() : "null",
-                    duration,
-                    outStr,
-                    registeredClasses,
-                    null
-            );
-        } catch (Throwable t) {
-            long duration = System.currentTimeMillis() - start;
-            Throwable cause = t.getCause() != null ? t.getCause() : t;
-            log.warn("Snippet execution failed", cause);
-            return new SnippetExecutionResponse(
-                    false,
-                    null,
-                    duration,
-                    capturedOutput.toString(StandardCharsets.UTF_8).trim(),
-                    registeredClasses,
-                    cause.getMessage() != null ? cause.getMessage() : cause.toString()
-            );
+                long duration = System.currentTimeMillis() - start;
+                String outStr = capturedOutput.toString(StandardCharsets.UTF_8).trim();
+
+                return new SnippetExecutionResponse(
+                        true,
+                        result != null ? result.toString() : "null",
+                        duration,
+                        outStr,
+                        registeredClasses,
+                        null
+                );
+            } catch (Throwable t) {
+                long duration = System.currentTimeMillis() - start;
+                Throwable cause = (t instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null)
+                        ? ite.getCause()
+                        : t;
+                log.warn("Snippet execution failed", cause);
+                return new SnippetExecutionResponse(
+                        false,
+                        null,
+                        duration,
+                        capturedOutput.toString(StandardCharsets.UTF_8).trim(),
+                        registeredClasses,
+                        cause.getMessage() != null ? cause.getMessage() : cause.toString()
+                );
             } finally {
                 System.setOut(originalOut);
             }
