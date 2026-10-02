@@ -7,6 +7,7 @@ import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.GenerateClassTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.InspectTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ListClassesTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.LoadBytesTool;
+import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.LoadFromJarTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.TransformClassTool;
 import com.antigravity.bytebuddy.mcp.application.service.ClassSessionService;
 import com.antigravity.bytebuddy.mcp.application.service.DisassembleBytecodeService;
@@ -47,7 +48,7 @@ public class ByteBuddyMcpServer {
         ClassRepositoryPort repositoryPort = new InMemoryClassRepositoryAdapter();
         BytecodeDisassemblerPort disassemblerPort = new AsmAndCfrDisassemblerAdapter();
         BytecodeEnginePort enginePort = new ByteBuddyEngineAdapter(disassemblerPort);
-        DynamicExecutionPort executionPort = new IsolatedDynamicExecutionAdapter();
+        DynamicExecutionPort executionPort = new IsolatedDynamicExecutionAdapter(repositoryPort);
 
         // 2. Application Services (Use Cases)
         GenerateClassService generateService = new GenerateClassService(enginePort, disassemblerPort, repositoryPort);
@@ -66,6 +67,7 @@ public class ByteBuddyMcpServer {
         dispatcher.registerTool(new ExecuteMethodTool(executionService, mapper));
         dispatcher.registerTool(new ListClassesTool(sessionService, mapper));
         dispatcher.registerTool(new LoadBytesTool(sessionService, mapper));
+        dispatcher.registerTool(new LoadFromJarTool(sessionService, mapper));
     }
 
     public void run(InputStream in, OutputStream out) {

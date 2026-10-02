@@ -86,6 +86,7 @@ The project is structured according to **Domain-Driven Design (DDD)** and **Hexa
 | `bytebuddy_execute_method` | Instantiates class in an isolated ClassLoader, executes target method, and captures stdout and return value. | `className`, `methodName`, `arguments`. |
 | `bytebuddy_list_classes` | Lists all classes currently loaded or generated in the active MCP session. | — |
 | `bytebuddy_load_bytes` | Ingests arbitrary raw Base64 `.class` bytecode for instant inspection, disassembly, or transformation. | `bytecodeBase64`, `className` (optional). |
+| `bytebuddy_load_from_jar` | Inspects or imports classes directly from a local `.jar` archive (supports individual classes or batch import via `*`). | `jarPath`, `className` (optional). |
 
 ---
 

@@ -22,6 +22,16 @@ import java.util.Map;
 public class IsolatedDynamicExecutionAdapter implements DynamicExecutionPort {
     private static final Logger log = LoggerFactory.getLogger(IsolatedDynamicExecutionAdapter.class);
 
+    private final com.antigravity.bytebuddy.mcp.domain.port.out.ClassRepositoryPort repositoryPort;
+
+    public IsolatedDynamicExecutionAdapter() {
+        this(null);
+    }
+
+    public IsolatedDynamicExecutionAdapter(com.antigravity.bytebuddy.mcp.domain.port.out.ClassRepositoryPort repositoryPort) {
+        this.repositoryPort = repositoryPort;
+    }
+
     @Override
     public ExecutionResult execute(BytecodeClass bytecodeClass, String methodName, Object[] args) {
         String className = bytecodeClass.getName().getValue();
@@ -33,8 +43,15 @@ public class IsolatedDynamicExecutionAdapter implements DynamicExecutionPort {
 
         long start = System.currentTimeMillis();
         try {
-            // Load class inside isolated ByteArrayClassLoader
-            Map<String, byte[]> typeMap = Collections.singletonMap(className, bytes);
+            // Load class inside isolated ByteArrayClassLoader with all session classes
+            Map<String, byte[]> typeMap = new java.util.HashMap<>();
+            if (repositoryPort != null) {
+                for (BytecodeClass bc : repositoryPort.findAll()) {
+                    typeMap.put(bc.getName().getValue(), bc.getBytecode());
+                }
+            }
+            typeMap.put(className, bytes);
+
             ClassLoader isolatedLoader = new ByteArrayClassLoader(
                     getClass().getClassLoader(),
                     typeMap,
