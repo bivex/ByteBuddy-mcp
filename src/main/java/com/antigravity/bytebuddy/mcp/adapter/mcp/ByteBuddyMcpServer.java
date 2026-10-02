@@ -3,6 +3,7 @@ package com.antigravity.bytebuddy.mcp.adapter.mcp;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.protocol.McpJsonRpcDispatcher;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.DisassembleTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ExecuteMethodTool;
+import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ExecuteSnippetTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.GenerateClassTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.InspectTool;
 import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.ListClassesTool;
@@ -12,6 +13,7 @@ import com.antigravity.bytebuddy.mcp.adapter.mcp.tools.TransformClassTool;
 import com.antigravity.bytebuddy.mcp.application.service.ClassSessionService;
 import com.antigravity.bytebuddy.mcp.application.service.DisassembleBytecodeService;
 import com.antigravity.bytebuddy.mcp.application.service.ExecuteDynamicMethodService;
+import com.antigravity.bytebuddy.mcp.application.service.ExecuteSnippetService;
 import com.antigravity.bytebuddy.mcp.application.service.GenerateClassService;
 import com.antigravity.bytebuddy.mcp.application.service.InspectBytecodeService;
 import com.antigravity.bytebuddy.mcp.application.service.TransformBytecodeService;
@@ -19,8 +21,10 @@ import com.antigravity.bytebuddy.mcp.domain.port.out.BytecodeDisassemblerPort;
 import com.antigravity.bytebuddy.mcp.domain.port.out.BytecodeEnginePort;
 import com.antigravity.bytebuddy.mcp.domain.port.out.ClassRepositoryPort;
 import com.antigravity.bytebuddy.mcp.domain.port.out.DynamicExecutionPort;
+import com.antigravity.bytebuddy.mcp.domain.port.out.SnippetCompilerPort;
 import com.antigravity.bytebuddy.mcp.infrastructure.adapter.asm.AsmAndCfrDisassemblerAdapter;
 import com.antigravity.bytebuddy.mcp.infrastructure.adapter.bytebuddy.ByteBuddyEngineAdapter;
+import com.antigravity.bytebuddy.mcp.infrastructure.adapter.compiler.JdkInMemoryCompilerAdapter;
 import com.antigravity.bytebuddy.mcp.infrastructure.adapter.execution.IsolatedDynamicExecutionAdapter;
 import com.antigravity.bytebuddy.mcp.infrastructure.adapter.persistence.InMemoryClassRepositoryAdapter;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -50,6 +54,8 @@ public class ByteBuddyMcpServer {
         BytecodeEnginePort enginePort = new ByteBuddyEngineAdapter(disassemblerPort);
         DynamicExecutionPort executionPort = new IsolatedDynamicExecutionAdapter(repositoryPort);
 
+        SnippetCompilerPort compilerPort = new JdkInMemoryCompilerAdapter();
+
         // 2. Application Services (Use Cases)
         GenerateClassService generateService = new GenerateClassService(enginePort, disassemblerPort, repositoryPort);
         TransformBytecodeService transformService = new TransformBytecodeService(enginePort, disassemblerPort, repositoryPort);
@@ -57,6 +63,7 @@ public class ByteBuddyMcpServer {
         InspectBytecodeService inspectService = new InspectBytecodeService(disassemblerPort, repositoryPort);
         ExecuteDynamicMethodService executionService = new ExecuteDynamicMethodService(executionPort, repositoryPort);
         ClassSessionService sessionService = new ClassSessionService(repositoryPort, disassemblerPort);
+        ExecuteSnippetService snippetService = new ExecuteSnippetService(compilerPort, disassemblerPort, repositoryPort);
 
         // 3. Dispatcher and Tool Registration
         this.dispatcher = new McpJsonRpcDispatcher(mapper);
@@ -68,6 +75,7 @@ public class ByteBuddyMcpServer {
         dispatcher.registerTool(new ListClassesTool(sessionService, mapper));
         dispatcher.registerTool(new LoadBytesTool(sessionService, mapper));
         dispatcher.registerTool(new LoadFromJarTool(sessionService, mapper));
+        dispatcher.registerTool(new ExecuteSnippetTool(snippetService, mapper));
     }
 
     public void run(InputStream in, OutputStream out) {

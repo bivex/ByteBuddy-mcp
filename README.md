@@ -87,6 +87,7 @@ The project is structured according to **Domain-Driven Design (DDD)** and **Hexa
 | `bytebuddy_list_classes` | Lists all classes currently loaded or generated in the active MCP session. | — |
 | `bytebuddy_load_bytes` | Ingests arbitrary raw Base64 `.class` bytecode for instant inspection, disassembly, or transformation. | `bytecodeBase64`, `className` (optional). |
 | `bytebuddy_load_from_jar` | Inspects or imports classes directly from a local `.jar` archive (supports individual classes or batch import via `*`). | `jarPath`, `className` (optional). |
+| `bytebuddy_execute_snippet` | Compiles and executes raw Java code directly using the official ByteBuddy library (`net.bytebuddy.*`). Full fluent API support, automatic session registration. | `sourceCode`, `className` (optional). |
 
 ---
 
